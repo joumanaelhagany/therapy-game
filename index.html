@@ -162,8 +162,7 @@
     </div>
 
     <div style="font-size:12px;color:rgba(255,255,255,0.4)">
-      <span style="color:#00c8ff">● Right</span>&nbsp;
-      <span style="color:#50ff78">● Left</span>
+      <span style="color:#00c8ff">● One Hand Mode</span>
     </div>
   </div>
 
@@ -183,8 +182,7 @@
         ☝️ <strong style="color:#7ef7c8">Point index finger</strong> to move cursor<br>
         🤏 <strong style="color:#7ef7c8">Pinch</strong> near a ball = grab<br>
         ✋ <strong style="color:#7ef7c8">Keep pinching</strong> = move ball<br>
-        🖐️ <strong style="color:#7ef7c8">Open fingers</strong> over matching target = place<br><br>
-        Keep your hand in the camera the whole time!
+        🖐️ <strong style="color:#7ef7c8">Open fingers</strong> over matching target = place
       </p>
       <button class="btn" id="btn-start">Allow Camera &amp; Play</button>
     </div>
@@ -214,13 +212,17 @@
     window.addEventListener('resize', resize);
 
     const COLS = ['#6b6bff','#3ddff0','#77cb6b','#ff964d','#ce6bff','#4dc8ff'];
-    const HCOL = { Right:'#00c8ff', Left:'#50ff78' };
+    const CURSOR_COLOR = '#00c8ff';
     const SESSION = 180;
     const PINCH_THRESH = 0.07;
 
-    const HANDS = {
-      Right: { x:300, y:300, pinch:false, prevPinch:false, visible:true, lastSeen:0, ballId:null },
-      Left:  { x:500, y:300, pinch:false, prevPinch:false, visible:true, lastSeen:0, ballId:null }
+    const HAND = {
+      x: 300,
+      y: 300,
+      pinch: false,
+      visible: false,
+      ballId: null,
+      lastSeen: 0
     };
 
     let score = 0;
@@ -238,12 +240,8 @@
     function spawnRound() {
       balls = [];
       targets = [];
-
-      for (const h of Object.values(HANDS)) {
-        h.ballId = null;
-        h.pinch = false;
-        h.prevPinch = false;
-      }
+      HAND.ballId = null;
+      HAND.pinch = false;
 
       const br = Math.max(32, 58 - level * 2);
       const tr = Math.max(44, 74 - level * 2);
@@ -316,9 +314,9 @@
       }
     }
 
-    function stepHand(h, label) {
-      if (h.ballId === null) {
-        if (h.pinch) {
+    function stepHand() {
+      if (HAND.ballId === null) {
+        if (HAND.pinch) {
           let nearestBall = null;
           let nearestDist = Infinity;
 
@@ -326,38 +324,38 @@
             if (b.placed) continue;
             if (b.owner !== null) continue;
 
-            const d = Math.hypot(h.x - b.x, h.y - b.y);
-            if (d < b.r + 70 && d < nearestDist) {
+            const d = Math.hypot(HAND.x - b.x, HAND.y - b.y);
+            if (d < b.r + 85 && d < nearestDist) {
               nearestBall = b;
               nearestDist = d;
             }
           }
 
           if (nearestBall) {
-            nearestBall.owner = label;
-            h.ballId = nearestBall.id;
+            nearestBall.owner = 'hand';
+            HAND.ballId = nearestBall.id;
           }
         }
       } else {
-        const b = balls.find(ball => ball.id === h.ballId);
+        const b = balls.find(ball => ball.id === HAND.ballId);
 
         if (!b || b.placed) {
           if (b) b.owner = null;
-          h.ballId = null;
+          HAND.ballId = null;
           return;
         }
 
-        b.x += (h.x - b.x) * 0.45;
-        b.y += (h.y - b.y) * 0.45;
+        b.x += (HAND.x - b.x) * 0.5;
+        b.y += (HAND.y - b.y) * 0.5;
 
-        if (!h.pinch) {
+        if (!HAND.pinch) {
           b.owner = null;
-          h.ballId = null;
+          HAND.ballId = null;
 
           const t = targets.find(target => target.id === b.id);
 
           if (t && !t.done) {
-            const onTarget = Math.hypot(b.x - t.x, b.y - t.y) < t.r + 60;
+            const onTarget = Math.hypot(b.x - t.x, b.y - t.y) < t.r + 65;
 
             if (onTarget) {
               b.x = t.x;
@@ -486,7 +484,7 @@
       ctx.fill();
 
       if (held) {
-        ctx.strokeStyle = HCOL[b.owner] + 'cc';
+        ctx.strokeStyle = CURSOR_COLOR + 'cc';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.arc(b.x, b.y, r + 6, 0, Math.PI * 2);
@@ -496,49 +494,44 @@
       ctx.restore();
     }
 
-    function drawCursor(h, label) {
-      const col = HCOL[label];
-      const holding = h.ballId !== null;
-      const r = h.pinch ? 12 : 20;
+    function drawCursor() {
+      const r = HAND.pinch ? 12 : 20;
 
       ctx.save();
-      ctx.shadowColor = col;
+      ctx.shadowColor = CURSOR_COLOR;
       ctx.shadowBlur = 14;
 
       ctx.beginPath();
-      ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = col + '33';
+      ctx.arc(HAND.x, HAND.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = CURSOR_COLOR + '33';
       ctx.fill();
-      ctx.strokeStyle = col;
+      ctx.strokeStyle = CURSOR_COLOR;
       ctx.lineWidth = 3;
       ctx.stroke();
 
       ctx.shadowBlur = 0;
 
       ctx.beginPath();
-      ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = col;
+      ctx.arc(HAND.x, HAND.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = CURSOR_COLOR;
       ctx.fill();
 
-      if (h.pinch) {
+      if (HAND.pinch) {
         ctx.setLineDash([3,3]);
         ctx.beginPath();
-        ctx.arc(h.x, h.y, r + 8, 0, Math.PI * 2);
-        ctx.strokeStyle = col + '99';
+        ctx.arc(HAND.x, HAND.y, r + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = CURSOR_COLOR + '99';
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.setLineDash([]);
       }
 
-      ctx.fillStyle = col;
+      ctx.fillStyle = CURSOR_COLOR;
       ctx.font = 'bold 11px Segoe UI';
       ctx.textAlign = 'center';
 
-      let lbl = '';
-      if (holding) lbl = `${label[0]} open fingers to drop`;
-      else lbl = `${label[0]} pinch near ball`;
-
-      ctx.fillText(lbl, h.x, h.y - r - 8);
+      let lbl = HAND.ballId !== null ? 'Open fingers to drop' : 'Pinch near ball';
+      ctx.fillText(lbl, HAND.x, HAND.y - r - 8);
       ctx.restore();
     }
 
@@ -581,9 +574,7 @@
       }
 
       if (running) {
-        for (const [lbl, h] of Object.entries(HANDS)) {
-          stepHand(h, lbl);
-        }
+        stepHand();
 
         const rem = Math.max(0, SESSION - (Date.now() - t0) / 1000);
         const m = Math.floor(rem / 60);
@@ -599,7 +590,7 @@
       for (const t of targets) drawTarget(t);
       for (const b of balls) drawBall(b);
       drawSparks();
-      for (const [lbl, h] of Object.entries(HANDS)) drawCursor(h, lbl);
+      drawCursor();
       drawFlash();
 
       requestAnimationFrame(loop);
@@ -612,34 +603,28 @@
 
     function onResults(res) {
       if (!res.multiHandLandmarks || !res.multiHandLandmarks.length) {
-        for (const h of Object.values(HANDS)) {
-          h.pinch = false;
-          h.prevPinch = false;
-        }
+        HAND.pinch = false;
+        HAND.visible = false;
         document.getElementById('dbg').textContent = 'Keep hand in camera view';
         return;
       }
 
-      res.multiHandLandmarks.forEach((lms, i) => {
-        const label = res.multiHandedness[i].label;
-        const h = HANDS[label];
-        if (!h) return;
+      const lms = res.multiHandLandmarks[0];
+      HAND.visible = true;
+      HAND.lastSeen = Date.now();
 
-        h.x = lms[8].x * W();
-        h.y = lms[8].y * H();
-        h.visible = true;
-        h.lastSeen = Date.now();
+      HAND.x = lms[8].x * W();
+      HAND.y = lms[8].y * H();
 
-        const dist = Math.hypot(
-          lms[4].x - lms[8].x,
-          lms[4].y - lms[8].y
-        );
+      const dist = Math.hypot(
+        lms[4].x - lms[8].x,
+        lms[4].y - lms[8].y
+      );
 
-        h.pinch = dist < PINCH_THRESH;
+      HAND.pinch = dist < PINCH_THRESH;
 
-        document.getElementById('dbg').textContent =
-          `${label}: pinch dist=${dist.toFixed(3)} | ${h.pinch ? '🤏 PINCHING' : '☝️ pointing'} | holding=${h.ballId !== null}`;
-      });
+      document.getElementById('dbg').textContent =
+        `pinch dist=${dist.toFixed(3)} | ${HAND.pinch ? 'PINCHING' : 'POINTING'} | holding=${HAND.ballId !== null}`;
     }
 
     document.getElementById('btn-start').onclick = async function() {
@@ -674,10 +659,10 @@
       });
 
       mp.setOptions({
-        maxNumHands: 2,
+        maxNumHands: 1,
         modelComplexity: 1,
-        minDetectionConfidence: 0.3,
-        minTrackingConfidence: 0.2
+        minDetectionConfidence: 0.45,
+        minTrackingConfidence: 0.45
       });
 
       mp.onResults(onResults);
