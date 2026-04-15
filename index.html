@@ -22,7 +22,7 @@ body { background:#0a0a1a; color:#fff; font-family:'Segoe UI',sans-serif; overfl
 #pbf { height:100%; background:#7ef7c8; width:0; transition:width .3s; }
 .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(10,10,26,0.94); z-index:20; gap:16px; }
 .overlay h2 { font-size:26px; font-weight:700; color:#7ef7c8; }
-.overlay p { color:rgba(255,255,255,0.55); font-size:14px; text-align:center; max-width:420px; line-height:2; }
+.overlay p { color:rgba(255,255,255,0.55); font-size:14px; text-align:center; max-width:420px; line-height:2.2; }
 .btn { padding:12px 28px; border-radius:10px; border:none; font-size:14px; font-weight:600; cursor:pointer; background:#7ef7c8; color:#0a0a1a; }
 </style>
 </head>
@@ -49,10 +49,10 @@ body { background:#0a0a1a; color:#fff; font-family:'Segoe UI',sans-serif; overfl
   <div class="overlay" id="ov-start">
     <h2>✋ Hand Therapy Game</h2>
     <p>
-      ✋ <strong style="color:#7ef7c8">Open hand</strong> = move cursor around<br>
-      ✊ <strong style="color:#7ef7c8">Close fist</strong> near a ball = grab it<br>
-      ✋ <strong style="color:#7ef7c8">Open hand</strong> over matching target = place it<br><br>
-      Cursor always stays on screen!
+      ☝️ <strong style="color:#7ef7c8">Point index finger</strong> to move cursor<br>
+      🤏 <strong style="color:#7ef7c8">Pinch</strong> (thumb + index together) near ball = grab<br>
+      🤏 <strong style="color:#7ef7c8">Pinch again</strong> over matching target = place<br><br>
+      Keep your hand in the camera the whole time!
     </p>
     <button class="btn" id="btn-start">Allow Camera &amp; Play</button>
   </div>
@@ -79,16 +79,14 @@ resize();window.addEventListener('resize',resize);
 const COLS=['#6b6bff','#3ddff0','#77cb6b','#ff964d','#ce6bff','#4dc8ff'];
 const HCOL={Right:'#00c8ff',Left:'#50ff78'};
 const SESSION=180;
+const PINCH_THRESH=0.07; // pinch distance threshold
 
-// ── Hand state ────────────────────────────────────────
-// Cursor ALWAYS shows at last known position
-// open=true  → moving freely, can grab if fist near ball
-// open=false → fist, dragging ball if holding one
-// Transition open→fist near ball = grab
-// Transition fist→open over target = place
+// Hand state
+// Cursor follows index fingertip always
+// Pinch = grab if not holding, release if holding
 const HANDS={
-  Right:{x:300,y:300,open:true,visible:true,lastSeen:0,ballId:null,prevOpen:true},
-  Left: {x:500,y:300,open:true,visible:true,lastSeen:0,ballId:null,prevOpen:true},
+  Right:{x:300,y:300,pinch:false,prevPinch:false,visible:true,lastSeen:0,ballId:null},
+  Left: {x:500,y:300,pinch:false,prevPinch:false,visible:true,lastSeen:0,ballId:null},
 };
 
 let score=0,level=1,placed=0,totalDone=0;
@@ -97,7 +95,7 @@ let t0=null,running=false,flashTxt='',flashAt=0;
 
 function spawnRound(){
   balls=[];targets=[];
-  for(const h of Object.values(HANDS)){h.ballId=null;}
+  for(const h of Object.values(HANDS))h.ballId=null;
   const br=Math.max(32,58-level*2);
   const tr=Math.max(44,74-level*2);
   const n=Math.min(3+Math.floor(level/2),5);
@@ -134,15 +132,13 @@ function burst(x,y,c){
 
 // ── GAME LOGIC ────────────────────────────────────────
 function stepHand(h,label){
-  // Detect transitions
-  const justClosed = h.prevOpen && !h.open;   // opened → closed fist
-  const justOpened = !h.prevOpen && h.open;   // fist → opened hand
-  h.prevOpen = h.open;
+  // Detect pinch START (not held, just the moment of pinching)
+  const justPinched = h.pinch && !h.prevPinch;
+  h.prevPinch = h.pinch;
 
   if(h.ballId===null){
-    // Not holding anything
-    // GRAB on fist-close near a free ball
-    if(justClosed){
+    // Not holding — pinch near ball to grab
+    if(justPinched){
       for(const b of balls){
         if(b.placed||b.owner!==null)continue;
         if(Math.hypot(h.x-b.x,h.y-b.y)<b.r+65){
@@ -151,36 +147,32 @@ function stepHand(h,label){
       }
     }
   } else {
-    // Holding a ball — drag it
+    // Holding — drag ball with finger
     const b=balls.find(b=>b.id===h.ballId);
     if(!b||b.placed){
       if(b)b.owner=null;
       h.ballId=null;return;
     }
 
-    // Always drag ball to hand
-    b.x+=(h.x-b.x)*0.55;
-    b.y+=(h.y-b.y)*0.55;
+    // Drag ball to cursor
+    b.x+=(h.x-b.x)*0.6;
+    b.y+=(h.y-b.y)*0.6;
 
-    // PLACE on hand-open over matching target
-    if(justOpened){
+    // Pinch again to release/place
+    if(justPinched){
+      b.owner=null;h.ballId=null;
       const t=targets.find(t=>t.id===b.id);
       if(t&&!t.done&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+60){
-        // Place it!
         b.x=t.x;b.y=t.y;b.placed=true;t.done=true;
-        b.owner=null;h.ballId=null;
         burst(t.x,t.y,t.c);
         score+=10*level;placed++;totalDone++;
         flash(`+${10*level}!`);ui();
         if(balls.every(b=>b.placed)){
-          level++;placed=0;
-          flash(`Level ${level}!`);
+          level++;placed=0;flash(`Level ${level}!`);
           setTimeout(spawnRound,1000);
         }
-      } else {
-        // Not over target — drop ball, stays where it is, ready to grab again
-        b.owner=null;h.ballId=null;
       }
+      // If not on target — ball drops, can grab again
     }
   }
 }
@@ -190,9 +182,7 @@ function drawBg(){
   ctx.fillStyle='#0a0a1a';ctx.fillRect(0,0,W(),H());
   ctx.fillStyle='rgba(255,255,255,0.025)';
   for(let x=0;x<W();x+=40)
-    for(let y=0;y<H();y+=40){
-      ctx.beginPath();ctx.arc(x,y,1.5,0,Math.PI*2);ctx.fill();
-    }
+    for(let y=0;y<H();y+=40){ctx.beginPath();ctx.arc(x,y,1.5,0,Math.PI*2);ctx.fill();}
   ctx.save();ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.setLineDash([6,6]);
   ctx.beginPath();ctx.moveTo(W()/2,0);ctx.lineTo(W()/2,H());ctx.stroke();ctx.restore();
   ctx.fillStyle='rgba(255,255,255,0.1)';ctx.font='13px Segoe UI';ctx.textAlign='center';
@@ -235,41 +225,35 @@ function drawBall(b){
 }
 
 function drawCursor(h,label){
-  // ALWAYS draw cursor — even if briefly not detected, stays at last position
+  // Always draw — cursor never disappears
   const col=HCOL[label];
   const holding=h.ballId!==null;
-  const r=holding?14:22;
+  const r=h.pinch?12:20;
 
   ctx.save();
-  ctx.shadowColor=col;ctx.shadowBlur=16;
+  ctx.shadowColor=col;ctx.shadowBlur=14;
   ctx.beginPath();ctx.arc(h.x,h.y,r,0,Math.PI*2);
   ctx.fillStyle=col+'33';ctx.fill();
   ctx.strokeStyle=col;ctx.lineWidth=3;ctx.stroke();
   ctx.shadowBlur=0;
 
-  if(h.open&&!holding){
-    // Open hand fingers
-    const ang=[-0.6,-0.2,0.2,0.6,1.1],len=[24,29,29,24,17];
-    ctx.strokeStyle=col+'88';ctx.lineWidth=3;ctx.lineCap='round';
-    for(let i=0;i<5;i++){
-      const a=ang[i]-Math.PI/2;
-      ctx.beginPath();ctx.moveTo(h.x,h.y);
-      ctx.lineTo(h.x+Math.cos(a)*len[i],h.y+Math.sin(a)*len[i]);
-      ctx.stroke();
-    }
-  } else {
-    // Fist ring
-    ctx.setLineDash([4,4]);
+  // Small dot in center
+  ctx.beginPath();ctx.arc(h.x,h.y,4,0,Math.PI*2);
+  ctx.fillStyle=col;ctx.fill();
+
+  // Pinch indicator
+  if(h.pinch){
+    ctx.setLineDash([3,3]);
     ctx.beginPath();ctx.arc(h.x,h.y,r+8,0,Math.PI*2);
-    ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.strokeStyle=col+'99';ctx.lineWidth=1.5;ctx.stroke();
     ctx.setLineDash([]);
   }
 
+  // Label
   ctx.fillStyle=col;ctx.font='bold 11px Segoe UI';ctx.textAlign='center';
   let lbl='';
-  if(holding) lbl=`${label[0]} ✊ → open hand on target`;
-  else if(!h.open) lbl=`${label[0]} ✊ close to ball to grab`;
-  else lbl=`${label[0]} ✋ move freely`;
+  if(holding) lbl=`${label[0]} 🤏 pinch over target`;
+  else        lbl=`${label[0]} 🤏 pinch near ball`;
   ctx.fillText(lbl,h.x,h.y-r-8);
   ctx.restore();
 }
@@ -296,7 +280,7 @@ function loop(){
   for(const s of sparks){s.x+=s.vx;s.y+=s.vy;s.vy+=.1;s.l-=.025;s.r*=.97;}
 
   if(running){
-    for(const [lbl,h] of Object.entries(HANDS)) stepHand(h,lbl);
+    for(const [lbl,h] of Object.entries(HANDS))stepHand(h,lbl);
     const rem=Math.max(0,SESSION-(Date.now()-t0)/1000);
     const m=Math.floor(rem/60),s=Math.floor(rem%60);
     document.getElementById('tm').textContent=`${m}:${s.toString().padStart(2,'0')}`;
@@ -319,8 +303,7 @@ function endGame(){
 // ── MEDIAPIPE ─────────────────────────────────────────
 function onResults(res){
   if(!res.multiHandLandmarks||!res.multiHandLandmarks.length){
-    // Hand lost — keep cursor at last position, don't change anything
-    document.getElementById('dbg').textContent='Hand lost — keep hand in camera view';
+    document.getElementById('dbg').textContent='Keep hand in camera view';
     return;
   }
 
@@ -329,25 +312,17 @@ function onResults(res){
     const label=raw==='Left'?'Right':'Left';
     const h=HANDS[label];if(!h)return;
 
-    // Palm centre
-    const mi=[0,5,9,13,17];
-    let px=0,py=0;
-    for(const j of mi){px+=lms[j].x;py+=lms[j].y;}
-    px/=mi.length;py/=mi.length;
-    h.x=px*W();h.y=py*H();
+    // Use INDEX FINGERTIP (landmark 8) for cursor position
+    h.x=lms[8].x*W();
+    h.y=lms[8].y*H();
     h.visible=true;h.lastSeen=Date.now();
 
-    // Count curled fingers
-    const TIPS=[8,12,16,20],PIPS=[6,10,14,18];
-    const curled=TIPS.filter((t,i)=>lms[t].y>lms[PIPS[i]].y).length;
-    const ext=TIPS.filter((t,i)=>lms[t].y<lms[PIPS[i]].y).length;
-
-    // 3+ curled = fist, 2+ extended = open
-    if(curled>=3) h.open=false;
-    if(ext>=2)    h.open=true;
+    // Pinch = distance between thumb tip (4) and index tip (8)
+    const dist=Math.hypot(lms[4].x-lms[8].x,lms[4].y-lms[8].y);
+    h.pinch=dist<PINCH_THRESH;
 
     document.getElementById('dbg').textContent=
-      `${label}: curled=${curled} ext=${ext} | ${h.open?'✋ OPEN':'✊ FIST'} | holding=${h.ballId!==null}`;
+      `${label}: pinch dist=${dist.toFixed(3)} | ${h.pinch?'🤏 PINCHING':'☝️ pointing'} | holding=${h.ballId!==null}`;
   });
 }
 
